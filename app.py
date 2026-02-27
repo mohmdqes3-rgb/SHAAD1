@@ -3,17 +3,16 @@ from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
 import cv2
 import mediapipe as mp
 import numpy as np
-from collections import deque
 
 # --- إعدادات الصفحة ---
 st.set_page_config(page_title="نظام ترجمة لغة الإشارة", layout="wide")
 
-# إعدادات الاتصال للكاميرا (ضرورية للنشر على الويب)
+# إعدادات الاتصال (ضرورية لعمل الكاميرا في السيرفر)
 RTC_CONFIGURATION = RTCConfiguration(
     {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
 )
 
-# --- محرك التعرف على الإشارات (نفس المنطق الخاص بك) ---
+# --- محرك التعرف على الإشارات ---
 class GestureEngine:
     def __init__(self):
         self.rules = []
@@ -50,10 +49,16 @@ class GestureEngine:
             except: continue
         return "جاري التحليل..."
 
-# --- معالج الفيديو (Video Processor) ---
+# --- معالج الفيديو ---
 class VideoProcessor:
     def __init__(self):
-        self.hands = mp.solutions.hands.Hands(max_num_hands=1, min_detection_confidence=0.7)
+        # تم تصحيح __init__ هنا لضمان عملها في السيرفر
+        self.hands = mp.solutions.hands.Hands(
+            static_image_mode=False,
+            max_num_hands=1,
+            min_detection_confidence=0.7,
+            min_tracking_confidence=0.5
+        )
         self.engine = GestureEngine()
 
     def recv(self, frame):
@@ -67,31 +72,25 @@ class VideoProcessor:
             handed = res.multi_handedness[0].classification[0].label
             label = self.engine.classify(hand.landmark, handed)
             
-            # رسم الهيكل العظمي
             mp.solutions.drawing_utils.draw_landmarks(img, hand, mp.solutions.hands.HAND_CONNECTIONS)
-            # كتابة النتيجة على الصورة
-            cv2.putText(img, label, (50, 80), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 0), 3)
+            cv2.putText(img, label, (50, 80), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 255, 0), 2)
 
         return frame.from_ndarray(img, format="bgr24")
 
-# --- واجهة المستخدم (Streamlit UI) ---
-
-# شريط جانبي للأسماء
+# --- واجهة المستخدم ---
 st.sidebar.title("🎓 تفاصيل المشروع")
-st.sidebar.markdown("""
-### إعداد الطالبات:
-* **شهد صادق حمزة**
-* **بنين عبد الله عبد الزهرة**
-* **فاطمة كريم حميد شبيب**
+st.sidebar.info("""
+**إعداد الطالبات:**
+* شهد صادق حمزة
+* بنين عبد الله عبد الزهرة
+* فاطمة كريم حميد شبيب
 
-### إشراف:
-* **الست زهراء كاظم فرهود**
+**بإشراف:**
+* الست زهراء كاظم فرهود
 """)
 
 st.title("✨ نظام ترجمة لغة الإشارة (AI)")
-st.write("مرحباً بكم في نظامنا الذكي للتعرف على لغة الإشارة العربية.")
 
-# منطقة الكاميرا
 webrtc_streamer(
     key="sign-lang",
     mode=WebRtcMode.SENDRECV,
@@ -100,5 +99,3 @@ webrtc_streamer(
     async_processing=True,
     media_stream_constraints={"video": True, "audio": False},
 )
-
-st.info("💡 اضغط على 'Start' لتشغيل الكاميرا وابدأ بالإشارة بيدك.")
